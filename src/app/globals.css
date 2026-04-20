@@ -1,26 +1,91 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #080808;
+  --navbar-bg: #161618;
+  --navbar-border: #2a2a2e;
+  --green: #00e676;
+  --green-dim: rgba(0, 230, 118, 0.13);
+  --red: #ff1744;
+  --red-dim: rgba(255, 23, 68, 0.13);
+  --text-primary: #f0f0f0;
+  --text-secondary: #888;
+  --text-muted: #555;
+  --accent: #c8a96e;
+  --accent-dim: rgba(200, 169, 110, 0.07);
+  --panel-bg: #0f0f10;
+  --panel-border: #222226;
+  --card-bg: #111113;
+  --call-green: #00e676;
+  --put-red: #ff1744;
+  --hover-bg: #1a1a1e;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Rajdhani', sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
 }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 2px; }
+* { scrollbar-width: thin; scrollbar-color: #2a2a2e transparent; }
+
+/* ── Animations ── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.82); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(56px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-56px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tick-flash {
+  0%   { opacity: 1; }
+  30%  { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse-dot 2s infinite;
+  flex-shrink: 0;
+}
+
+.chart-animate-right { animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+.chart-animate-left  { animation: slideInLeft  0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+.fade-in             { animation: fadeIn 0.35s ease both; }
+.tick-flash          { animation: tick-flash 0.5s ease; }
