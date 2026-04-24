@@ -13,32 +13,24 @@ const INDEX_META: Record<
   IndexKey,
   {
     label: string;
-    atmStrike: number;
     strikeGap: number;
     futureLabel: string;
-    expiries: string[];
   }
 > = {
   NIFTY: {
     label: "NIFTY 50",
-    atmStrike: 22850,
     strikeGap: 50,
-    futureLabel: "FUTURES (APR)",
-    expiries: ["24 APR", "01 MAY", "29 MAY", "26 JUN"],
+    futureLabel: "FUTURES",
   },
   BANKNIFTY: {
     label: "BANK NIFTY",
-    atmStrike: 48600,
     strikeGap: 100,
-    futureLabel: "FUTURES (APR)",
-    expiries: ["24 APR", "01 MAY", "29 MAY", "26 JUN"],
+    futureLabel: "FUTURES",
   },
   SENSEX: {
     label: "SENSEX",
-    atmStrike: 75200,
     strikeGap: 100,
-    futureLabel: "FUTURES (APR)",
-    expiries: ["25 APR", "30 APR", "30 MAY", "27 JUN"],
+    futureLabel: "FUTURES",
   },
 };
 
@@ -48,12 +40,12 @@ const TF_POINTS: Record<string, number> = { "1D": 200, "1W": 300, "1M": 400, "3M
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtPrice(n: number) {
-  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtChange(diff: number, pct: number) {
   const sign = diff >= 0 ? "▲" : "▼";
-  return `${sign} ${Math.abs(diff).toFixed(2)} (${Math.abs(pct).toFixed(2)}%)`;
+  return `${sign} ₹${Math.abs(diff).toFixed(2)} (${Math.abs(pct).toFixed(2)}%)`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -64,7 +56,16 @@ export default function Home() {
     BANKNIFTY: [],
     SENSEX: [],
   });
+  const [portfolioData, setPortfolioData] = useState<any>(null);
+  const [sysMetrics, setSysMetrics] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
+
+  // API Modal State
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [apiKeys, setApiKeys] = useState(() => {
+    // We can load from somewhat of a mocked local storage or just keep blank
+    return { consumerKey: "", consumerSecret: "", mpin: "" };
+  });
 
   // P-FnO UI state
   const [activeTab, setActiveTab] = useState<"PRICING" | "RISK">("PRICING");
@@ -81,9 +82,12 @@ export default function Home() {
     const socket = io("http://localhost:3001");
     socket.on("connect", () => setIsConnected(true));
     socket.on("disconnect", () => setIsConnected(false));
+    socket.on("portfolio_update", (data: any) => setPortfolioData(data));
     socket.on("market_update", (data: any) => {
       setMarketData(data);
-      const time = new Date().toLocaleTimeString("en-US", {
+      if (data.sysMetrics) setSysMetrics(data.sysMetrics);
+      const time = new Date().toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
         hour12: false,
         hour: "2-digit",
         minute: "2-digit",
@@ -167,31 +171,44 @@ export default function Home() {
   // ── Derived data ──
   const displayIdx = selectedIndex ?? "NIFTY";
   const meta = INDEX_META[displayIdx];
-  const activeChain = marketData.chains?.[displayIdx] ?? [];
+  const idxNum = INDICES.indexOf(displayIdx);
+  const chainCandidate = marketData.chains?.[displayIdx]?.[expiry];
+  const activeChain = Array.isArray(chainCandidate) ? chainCandidate : (marketData.chains?.[displayIdx] || []);
   const activeHistory = histories[displayIdx];
+
+  // Dynamic expiry labels from backend (real dates)
+  const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["—", "—", "—", "—"];
+
+  const spot = parseFloat(marketData.spots[displayIdx]);
+
+  const prevCloseStr = marketData.prevClose?.[displayIdx];
+  const prevClose = prevCloseStr ? parseFloat(prevCloseStr) : (spot * 0.993);
 
   // Trend direction
   let trendColor = "var(--text-primary)";
-  if (activeHistory.length >= 2) {
+  if (activeHistory.length > 0) {
     const last = activeHistory[activeHistory.length - 1].price;
-    const prev = activeHistory[activeHistory.length - 2].price;
-    trendColor = last >= prev ? "var(--green)" : "var(--red)";
+    trendColor = last >= prevClose ? "var(--green)" : "var(--red)";
   }
 
-  const spot = parseFloat(marketData.spots[displayIdx]);
-  const baseSpot = parseFloat(marketData.spots["NIFTY"]); // approx open
+  const activeDTE = Array.isArray(marketData.timeToMaturity?.[0]) 
+                     ? (marketData.timeToMaturity[idxNum]?.[expiry] || marketData.timeToMaturity[idxNum]?.[0])
+                     : marketData.timeToMaturity;
 
   // Per-tab info
   const tabInfo = INDICES.map((idx) => {
     const s = parseFloat(marketData.spots[idx]);
-    const diff = s - s * 0.993; // simulated day change
-    const pct = (diff / (s - diff)) * 100;
+    const pc = marketData.prevClose ? parseFloat(marketData.prevClose[idx]) : s * 0.993;
+    const diff = s - pc;
+    const pct = (diff / pc) * 100;
     return { key: idx, label: INDEX_META[idx].label, spot: s, diff, pct };
   });
 
-  const futurePrice = spot * 1.002;
+  const rf = parseFloat(marketData.rfRate) / 100;
+  const t = parseFloat(activeDTE || "0") / 365;
+  const futurePrice = spot * Math.exp(rf * t);
   const futureDiff = futurePrice - spot;
-  const futurePct = (futureDiff / spot) * 100;
+  const futurePct = spot > 0 ? (futureDiff / spot) * 100 : 0;
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -309,7 +326,27 @@ export default function Home() {
         <div style={{ flex: 1 }} />
 
         {/* Market data */}
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 20 }}>
+          {/* ── SysMetrics HUD ── */}
+          {sysMetrics && (
+            <div style={{ display: "flex", gap: 12, marginRight: 16, background: "rgba(200, 169, 110, 0.05)", padding: "4px 12px", borderRadius: 4, border: "1px solid rgba(200, 169, 110, 0.2)" }}>
+               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                  <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase" }}>Engine Latency</span>
+                  <span style={{ fontSize: 11, color: "var(--call-green)", fontWeight: 700 }}>{sysMetrics.latencyMs}ms</span>
+               </div>
+               <div style={{ width: 1, background: "rgba(200,169,110,0.2)" }} />
+               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                  <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase" }}>Throughput</span>
+                  <span style={{ fontSize: 11, color: "var(--accent)" }}>{sysMetrics.throughputPerSec} ops/s</span>
+               </div>
+               <div style={{ width: 1, background: "rgba(200,169,110,0.2)" }} />
+               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                  <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase" }}>Strikes</span>
+                  <span style={{ fontSize: 11, color: "var(--text-primary)" }}>{sysMetrics.totalStrikes}</span>
+               </div>
+            </div>
+          )}
+
           <div style={{ textAlign: "right" }}>
             <div
               style={{
@@ -329,7 +366,7 @@ export default function Home() {
                 color: "var(--text-primary)",
               }}
             >
-              {marketData.timeToMaturity}d
+              {activeDTE}d
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -379,6 +416,23 @@ export default function Home() {
           >
             NSE · MARKET OPEN
           </div>
+          
+          <button
+            onClick={() => setShowApiModal(true)}
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 10,
+              padding: "4px 10px",
+              border: "1px solid var(--panel-border)",
+              background: "#0f0f10",
+              color: "var(--accent)",
+              cursor: "pointer",
+              borderRadius: 4,
+              letterSpacing: 1,
+            }}
+          >
+            API KEYS
+          </button>
         </div>
       </nav>
 
@@ -581,7 +635,7 @@ export default function Home() {
             </div>
 
             {/* Canvas chart from LiveChart */}
-            <LiveChart data={activeHistory} color={trendColor} />
+            <LiveChart data={activeHistory} previousClose={prevClose} />
           </div>
 
           {/* Options Panel */}
@@ -620,7 +674,7 @@ export default function Home() {
                   {meta.label} · Option Chain
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {meta.expiries.map((ex, i) => (
+                  {expiryLabels.map((ex: string, i: number) => (
                     <button
                       key={ex}
                       id={`expiry-btn-${i}`}
@@ -697,7 +751,47 @@ export default function Home() {
       ) : (
         /* ── RISK TAB ─────────────────────────────────────────────────────── */
         <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
-          <RiskDashboard chain={activeChain} spotPrice={spot} />
+          <RiskDashboard chain={activeChain} spotPrice={spot} portfolioData={portfolioData} />
+        </div>
+      )}
+
+      {/* ── API Modal Overlay ─────────────────────────────────────────────────── */}
+      {showApiModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
+          <div style={{ width: 420, background: "var(--panel-bg)", border: "1px solid var(--panel-border)", borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--panel-border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#0a0a0c" }}>
+               <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "var(--accent)", letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Kotak Neo Integration</span>
+               <button onClick={() => setShowApiModal(false)} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+               <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                 Connect your Kotak Trade API keys to enable live order routing and real-time margin tracking for the simulation engine. Keys are sent securely and stored temporarily.
+               </div>
+               
+               <div>
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>Consumer Key</div>
+                  <input type="password" value={apiKeys.consumerKey} onChange={e => setApiKeys({...apiKeys, consumerKey: e.target.value})} style={{ width: "100%", background: "#111", border: "1px solid #333", color: "var(--text-primary)", padding: "10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 13, outline: "none" }} placeholder="xxxxxxxxxxxx" />
+               </div>
+
+               <div>
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>Consumer Secret</div>
+                  <input type="password" value={apiKeys.consumerSecret} onChange={e => setApiKeys({...apiKeys, consumerSecret: e.target.value})} style={{ width: "100%", background: "#111", border: "1px solid #333", color: "var(--text-primary)", padding: "10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 13, outline: "none" }} placeholder="xxxxxxxxxxxx" />
+               </div>
+
+               <div>
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>Trading MPIN</div>
+                  <input type="password" value={apiKeys.mpin} onChange={e => setApiKeys({...apiKeys, mpin: e.target.value})} style={{ width: "100%", background: "#111", border: "1px solid #333", color: "var(--text-primary)", padding: "10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 13, outline: "none" }} placeholder="••••••" maxLength={6} />
+               </div>
+
+               <button onClick={() => {
+                 setTimeout(() => setShowApiModal(false), 800);
+               }} style={{ marginTop: 8, padding: "12px", background: "var(--accent)", color: "#000", border: "none", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "filter 0.2s" }}
+               onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.1)"}
+               onMouseLeave={e => e.currentTarget.style.filter = "brightness(1)"}>
+                 CONNECT ACCOUNT
+               </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

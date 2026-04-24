@@ -79,7 +79,7 @@ function GreekTooltip({
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function OptionsChain({ chain, spotPrice }: Props) {
+const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice }: Props) {
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
   const [tooltipSide, setTooltipSide] = useState<"call" | "put">("call");
 
@@ -326,4 +326,6 @@ export default function OptionsChain({ chain, spotPrice }: Props) {
       </div>
     </div>
   );
-}
+});
+
+export default OptionsChain;

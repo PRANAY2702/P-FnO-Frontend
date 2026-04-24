@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 interface LiveChartProps {
   data: { time: string; price: number }[];
-  color?: string;
+  previousClose?: number;
 }
 
-export default function LiveChart({ data, color = "var(--green)" }: LiveChartProps) {
+const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -17,13 +17,6 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
-    // Resolve CSS variable to actual hex if needed
-    const resolvedColor = color.startsWith("var(")
-      ? getComputedStyle(document.documentElement)
-          .getPropertyValue(color.slice(4, -1).trim())
-          .trim() || "#00e676"
-      : color;
 
     function resize() {
       if (!canvas) return;
@@ -41,7 +34,6 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       ctx.clearRect(0, 0, W, H);
 
       if (data.length < 2) {
-        // Awaiting ticks placeholder
         ctx.fillStyle = "rgba(85,85,85,0.08)";
         ctx.fillRect(0, 0, W, H);
         ctx.fillStyle = "#555";
@@ -52,8 +44,8 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       }
 
       const prices = data.map((d) => d.price);
-      const minV = Math.min(...prices);
-      const maxV = Math.max(...prices);
+      const minV = previousClose ? Math.min(...prices, previousClose) : Math.min(...prices);
+      const maxV = previousClose ? Math.max(...prices, previousClose) : Math.max(...prices);
       const range = maxV - minV || 1;
 
       const pad = { top: 90, bottom: 32, left: 60, right: 20 };
@@ -62,6 +54,19 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
 
       const xOf = (i: number) => pad.left + (i / (prices.length - 1)) * w;
       const yOf = (v: number) => pad.top + h - ((v - minV) / range) * h;
+
+      // Determine dynamic color
+      let baseColorStr = "var(--green)";
+      const lastPrice = prices[prices.length - 1];
+      if (previousClose && lastPrice < previousClose) {
+        baseColorStr = "var(--red)";
+      }
+
+      const resolvedColor = baseColorStr.startsWith("var(")
+        ? getComputedStyle(document.documentElement)
+            .getPropertyValue(baseColorStr.slice(4, -1).trim())
+            .trim() || "#00e676"
+        : baseColorStr;
 
       // ── Grid lines ──
       ctx.strokeStyle = "#1e1e22";
@@ -73,12 +78,30 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
         ctx.lineTo(W - pad.right, y);
         ctx.stroke();
 
-        // Y-axis labels
         const val = maxV - (g / 5) * range;
         ctx.fillStyle = "#555";
         ctx.font = "9px 'Share Tech Mono', monospace";
         ctx.textAlign = "right";
         ctx.fillText(val.toFixed(0), pad.left - 6, y + 3);
+      }
+
+      // ── Previous Close Line ──
+      if (previousClose) {
+        const py = yOf(previousClose);
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]); // Dotted line
+        ctx.moveTo(pad.left, py);
+        ctx.lineTo(W - pad.right, py);
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+        
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.font = "9px 'Share Tech Mono', monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(previousClose.toFixed(0), pad.left - 6, py - 4);
       }
 
       // ── Gradient fill ──
@@ -90,10 +113,8 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       ctx.beginPath();
       ctx.moveTo(xOf(0), yOf(prices[0]));
       for (let i = 1; i < prices.length; i++) {
-        const x0 = xOf(i - 1),
-          y0 = yOf(prices[i - 1]);
-        const x1 = xOf(i),
-          y1 = yOf(prices[i]);
+        const x0 = xOf(i - 1), y0 = yOf(prices[i - 1]);
+        const x1 = xOf(i), y1 = yOf(prices[i]);
         const cpx = (x0 + x1) / 2;
         ctx.bezierCurveTo(cpx, y0, cpx, y1, x1, y1);
       }
@@ -107,10 +128,8 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       ctx.beginPath();
       ctx.moveTo(xOf(0), yOf(prices[0]));
       for (let i = 1; i < prices.length; i++) {
-        const x0 = xOf(i - 1),
-          y0 = yOf(prices[i - 1]);
-        const x1 = xOf(i),
-          y1 = yOf(prices[i]);
+        const x0 = xOf(i - 1), y0 = yOf(prices[i - 1]);
+        const x1 = xOf(i), y1 = yOf(prices[i]);
         const cpx = (x0 + x1) / 2;
         ctx.bezierCurveTo(cpx, y0, cpx, y1, x1, y1);
       }
@@ -125,7 +144,6 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       const lastX = xOf(prices.length - 1);
       const lastY = yOf(prices[prices.length - 1]);
 
-      // Outer glow ring
       const glowGrad = ctx.createRadialGradient(lastX, lastY, 0, lastX, lastY, 12);
       glowGrad.addColorStop(0, resolvedColor + "60");
       glowGrad.addColorStop(1, resolvedColor + "00");
@@ -134,7 +152,6 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       ctx.fillStyle = glowGrad;
       ctx.fill();
 
-      // Solid dot
       ctx.beginPath();
       ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
       ctx.fillStyle = resolvedColor;
@@ -161,7 +178,7 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       ro.disconnect();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [data, color]);
+  }, [data, previousClose]);
 
   return (
     <canvas
@@ -176,4 +193,6 @@ export default function LiveChart({ data, color = "var(--green)" }: LiveChartPro
       }}
     />
   );
-}
+});
+
+export default LiveChart;
