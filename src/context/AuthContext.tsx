@@ -16,6 +16,7 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  kotakApiSaved: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   register: (data: { userId: string; email: string; password: string; fullName: string }) => Promise<{ success: boolean; error?: string }>;
