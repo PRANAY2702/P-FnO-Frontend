@@ -161,7 +161,7 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
       ctx.shadowBlur = 0;
 
       // ── X-axis time labels ──
-      ctx.fillStyle = "#444";
+      ctx.fillStyle = "#888"; // Changed from #444 for better visibility
       ctx.font = "9px 'Share Tech Mono', monospace";
       ctx.textAlign = "center";
       const labelStep = Math.max(1, Math.floor(prices.length / 6));

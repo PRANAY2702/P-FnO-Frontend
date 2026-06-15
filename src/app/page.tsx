@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import io from "socket.io-client";
 import OptionsChain from "../components/OptionsChain";
 import RiskDashboard from "../components/RiskDashboard";
 import LiveChart from "../components/LiveChart";
+import KotakSetupModal from "../components/KotakSetupModal";
+import { useAuth } from "../context/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type IndexKey = "NIFTY" | "BANKNIFTY" | "SENSEX";
@@ -35,8 +38,8 @@ const INDEX_META: Record<
 };
 
 const INDICES: IndexKey[] = ["NIFTY", "BANKNIFTY", "SENSEX"];
-const TIMEFRAMES = ["1D", "1W", "1M", "3M"];
-const TF_POINTS: Record<string, number> = { "1D": 200, "1W": 300, "1M": 400, "3M": 500 };
+const TIMEFRAMES = ["1D", "1W", "1M", "1Y", "5Y", "MAX"];
+const TF_POINTS: Record<string, number> = { "1D": 200, "1W": 300, "1M": 400, "1Y": 252, "5Y": 260, "MAX": 300 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtPrice(n: number) {
@@ -50,6 +53,9 @@ function fmtChange(diff: number, pct: number) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Home() {
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading, kotakApiSaved, logout } = useAuth();
+
   const [marketData, setMarketData] = useState<any>(null);
   const [histories, setHistories] = useState<Record<IndexKey, { time: string; price: number }[]>>({
     NIFTY: [],
@@ -60,17 +66,31 @@ export default function Home() {
   const [sysMetrics, setSysMetrics] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // API Modal State
+  // Kotak API Modal State
   const [showApiModal, setShowApiModal] = useState(false);
-  const [apiKeys, setApiKeys] = useState(() => {
-    // We can load from somewhat of a mocked local storage or just keep blank
-    return { consumerKey: "", consumerSecret: "", mpin: "" };
-  });
+  const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isLoading, isAuthenticated, router]);
+
+  // Show first-time Kotak setup after login
+  useEffect(() => {
+    if (isAuthenticated && !kotakApiSaved && !showFirstTimeSetup) {
+      const timer = setTimeout(() => setShowFirstTimeSetup(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, kotakApiSaved, showFirstTimeSetup]);
 
   // P-FnO UI state
   const [activeTab, setActiveTab] = useState<"PRICING" | "RISK">("PRICING");
   const [selectedIndex, setSelectedIndex] = useState<IndexKey | null>(null);
   const [timeframe, setTimeframe] = useState("1D");
+  const [historicalData, setHistoricalData] = useState<{ time: string; price: number }[]>([]);
+  const [isFetchingHistorical, setIsFetchingHistorical] = useState(false);
   const [expiry, setExpiry] = useState(0);
   const [animDir, setAnimDir] = useState(1);
   const [chartAnimClass, setChartAnimClass] = useState("");
@@ -79,7 +99,11 @@ export default function Home() {
 
   // ── WebSocket ──
   useEffect(() => {
-    const socket = io("http://localhost:3001");
+    // Connect directly to backend — Next.js rewrites can't proxy WebSocket upgrades
+    const backendUrl = typeof window !== "undefined"
+      ? `http://${window.location.hostname}:3001`
+      : "http://localhost:3001";
+    const socket = io(backendUrl);
     socket.on("connect", () => setIsConnected(true));
     socket.on("disconnect", () => setIsConnected(false));
     socket.on("portfolio_update", (data: any) => setPortfolioData(data));
@@ -106,7 +130,56 @@ export default function Home() {
     });
     return () => { socket.disconnect(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [timeframe]);
+
+  // ── Fetch historical data ──
+  useEffect(() => {
+    if (timeframe === "1D") return;
+    const fetchIdx = selectedIndex ?? "NIFTY";
+    let active = true;
+    setIsFetchingHistorical(true);
+
+    const backendUrl = typeof window !== "undefined"
+      ? `http://${window.location.hostname}:3001`
+      : "http://localhost:3001";
+
+    fetch(`${backendUrl}/api/prices/historical?symbol=${fetchIdx}&range=${timeframe}`)
+      .then(r => r.json())
+      .then(data => {
+        if (active && data.data) {
+          // Format times for display based on timeframe
+          const formatted = data.data.map((d: any) => {
+            const date = new Date(d.time);
+            
+            const dStr = date.getDate().toString().padStart(2, "0");
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const mStr = months[date.getMonth()];
+            const yStr = date.getFullYear().toString().slice(-2);
+            const hr = date.getHours().toString().padStart(2, "0");
+            const min = date.getMinutes().toString().padStart(2, "0");
+
+            let timeStr = "";
+            if (timeframe === "1W") {
+              timeStr = `${dStr} ${mStr}, ${hr}:${min}`;
+            } else if (timeframe === "1M" || timeframe === "1Y") {
+              timeStr = `${dStr} ${mStr}`;
+            } else {
+              timeStr = `${mStr} '${yStr}`;
+            }
+            
+            return { time: timeStr, price: d.price };
+          });
+          setHistoricalData(formatted);
+          setIsFetchingHistorical(false);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to fetch historical data", err);
+        if (active) setIsFetchingHistorical(false);
+      });
+
+    return () => { active = false; };
+  }, [timeframe, selectedIndex]);
 
   // ── Select index tab ──
   const handleTabClick = useCallback(
@@ -138,7 +211,7 @@ export default function Home() {
   );
 
   // ─── Loading screen ───
-  if (!marketData?.spots) {
+  if (isLoading || !isAuthenticated || !marketData?.spots) {
     return (
       <div
         style={{
@@ -174,7 +247,7 @@ export default function Home() {
   const idxNum = INDICES.indexOf(displayIdx);
   const chainCandidate = marketData.chains?.[displayIdx]?.[expiry];
   const activeChain = Array.isArray(chainCandidate) ? chainCandidate : (marketData.chains?.[displayIdx] || []);
-  const activeHistory = histories[displayIdx];
+  const activeHistory = timeframe === "1D" ? histories[displayIdx] : historicalData;
 
   // Dynamic expiry labels from backend (real dates)
   const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["—", "—", "—", "—"];
@@ -423,16 +496,45 @@ export default function Home() {
               fontFamily: "'Share Tech Mono', monospace",
               fontSize: 10,
               padding: "4px 10px",
-              border: "1px solid var(--panel-border)",
-              background: "#0f0f10",
-              color: "var(--accent)",
+              border: `1px solid ${kotakApiSaved ? 'rgba(0,230,118,0.3)' : 'var(--panel-border)'}`,
+              background: kotakApiSaved ? 'rgba(0,230,118,0.06)' : '#0f0f10',
+              color: kotakApiSaved ? '#00e676' : 'var(--accent)',
               cursor: "pointer",
               borderRadius: 4,
               letterSpacing: 1,
             }}
           >
-            API KEYS
+            {kotakApiSaved ? '✓ API' : 'API KEYS'}
           </button>
+
+          {/* User info + Logout */}
+          {user && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg, #c8a96e, #8b6914)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: 700, color: '#000' }}>
+                {(user.fullName || user.email || 'U')[0].toUpperCase()}
+              </div>
+              <button
+                onClick={logout}
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 9,
+                  padding: '3px 8px',
+                  border: '1px solid #2a2a2e',
+                  background: 'transparent',
+                  color: '#555',
+                  cursor: 'pointer',
+                  borderRadius: 3,
+                  letterSpacing: 1,
+                  textTransform: 'uppercase',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#ff1744'; e.currentTarget.style.color = '#ff1744'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2e'; e.currentTarget.style.color = '#555'; }}
+              >
+                Logout
+              </button>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -635,7 +737,13 @@ export default function Home() {
             </div>
 
             {/* Canvas chart from LiveChart */}
-            <LiveChart data={activeHistory} previousClose={prevClose} />
+            {isFetchingHistorical ? (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, letterSpacing: 2 }}>
+                FETCHING DATA...
+              </div>
+            ) : (
+              <LiveChart data={activeHistory} previousClose={prevClose} />
+            )}
           </div>
 
           {/* Options Panel */}
@@ -744,7 +852,7 @@ export default function Home() {
               </div>
 
               {/* Chain */}
-              <OptionsChain chain={activeChain} spotPrice={spot} />
+              <OptionsChain chain={activeChain} spotPrice={spot} instrument={displayIdx} />
             </div>
           </div>
         </div>
@@ -755,45 +863,19 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── API Modal Overlay ─────────────────────────────────────────────────── */}
-      {showApiModal && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
-          <div style={{ width: 420, background: "var(--panel-bg)", border: "1px solid var(--panel-border)", borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--panel-border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#0a0a0c" }}>
-               <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "var(--accent)", letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>Kotak Neo Integration</span>
-               <button onClick={() => setShowApiModal(false)} style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
-            </div>
-            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-               <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.4 }}>
-                 Connect your Kotak Trade API keys to enable live order routing and real-time margin tracking for the simulation engine. Keys are sent securely and stored temporarily.
-               </div>
-               
-               <div>
-                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>Consumer Key</div>
-                  <input type="password" value={apiKeys.consumerKey} onChange={e => setApiKeys({...apiKeys, consumerKey: e.target.value})} style={{ width: "100%", background: "#111", border: "1px solid #333", color: "var(--text-primary)", padding: "10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 13, outline: "none" }} placeholder="xxxxxxxxxxxx" />
-               </div>
+      {/* ── Kotak API Setup Modal ────────────────────────────────────────────── */}
+      <KotakSetupModal
+        visible={showApiModal}
+        onClose={() => setShowApiModal(false)}
+      />
 
-               <div>
-                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>Consumer Secret</div>
-                  <input type="password" value={apiKeys.consumerSecret} onChange={e => setApiKeys({...apiKeys, consumerSecret: e.target.value})} style={{ width: "100%", background: "#111", border: "1px solid #333", color: "var(--text-primary)", padding: "10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 13, outline: "none" }} placeholder="xxxxxxxxxxxx" />
-               </div>
-
-               <div>
-                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase" }}>Trading MPIN</div>
-                  <input type="password" value={apiKeys.mpin} onChange={e => setApiKeys({...apiKeys, mpin: e.target.value})} style={{ width: "100%", background: "#111", border: "1px solid #333", color: "var(--text-primary)", padding: "10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 13, outline: "none" }} placeholder="••••••" maxLength={6} />
-               </div>
-
-               <button onClick={() => {
-                 setTimeout(() => setShowApiModal(false), 800);
-               }} style={{ marginTop: 8, padding: "12px", background: "var(--accent)", color: "#000", border: "none", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "filter 0.2s" }}
-               onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.1)"}
-               onMouseLeave={e => e.currentTarget.style.filter = "brightness(1)"}>
-                 CONNECT ACCOUNT
-               </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── First-time Kotak Setup (mandatory after login) ─────────────────── */}
+      <KotakSetupModal
+        visible={showFirstTimeSetup && !kotakApiSaved}
+        onClose={() => setShowFirstTimeSetup(false)}
+        onSuccess={() => setShowFirstTimeSetup(false)}
+        isFirstTime
+      />
     </div>
   );
 }

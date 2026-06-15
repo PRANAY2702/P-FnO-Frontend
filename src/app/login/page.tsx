@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../../context/AuthContext";
 
 // ─── Animated grid background ────────────────────────────────────────────────
 function GridCanvas() {
@@ -147,6 +148,7 @@ function TickerTape() {
 // ─── Main Login Page ──────────────────────────────────────────────────────────
 export default function LoginPage() {
   const router = useRouter();
+  const { login, loginWithGoogle, isAuthenticated, isLoading: authLoading } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
@@ -180,18 +182,28 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleCredentialSubmit = (e: React.FormEvent) => {
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.push("/");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  const handleCredentialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!username || !password) {
-      setError("Username and password are required.");
+      setError("Email and password are required.");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setStep("totp");
-    }, 900);
+    const result = await login(username, password);
+    setLoading(false);
+    if (result.success) {
+      router.push("/");
+    } else {
+      setError(result.error || "Login failed");
+    }
   };
 
   const handleTotpSubmit = (e: React.FormEvent) => {
@@ -493,6 +505,7 @@ export default function LoginPage() {
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
                   type="button"
+                  onClick={() => router.push("/forgot-password")}
                   style={{
                     background: "none",
                     border: "none",
@@ -547,7 +560,14 @@ export default function LoginPage() {
               <button
                 id="google-login-btn"
                 type="button"
-                onClick={() => { window.location.href = "http://localhost:3001/api/auth/google"; }}
+                onClick={async () => {
+                  setLoading(true);
+                  const res = await loginWithGoogle();
+                  setLoading(false);
+                  if (res.success) router.push("/");
+                  else setError(res.error || "Google login failed");
+                }}
+                disabled={loading}
                 style={{
                   width: "100%",
                   padding: "12px 16px",

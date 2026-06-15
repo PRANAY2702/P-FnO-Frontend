@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "../context/AuthContext";
 
 export const metadata: Metadata = {
   title: "P-FnO — Futures & Options",
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body suppressHydrationWarning className="h-full">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

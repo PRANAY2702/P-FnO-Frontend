@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../../context/AuthContext";
 
 // ─── Animated grid background ────────────────────────────────────────────────
 function GridCanvas() {
@@ -137,6 +138,7 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RegisterPage() {
   const router = useRouter();
+  const { register: registerUser, isAuthenticated, isLoading: authLoading } = useAuth();
   const [step, setStep] = useState<Step>("account");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<FormData & { general: string }>>({});
@@ -153,6 +155,13 @@ export default function RegisterPage() {
   });
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.push("/");
+    }
+  }, [authLoading, isAuthenticated, router]);
 
   const set = (key: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const val = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value;
@@ -197,13 +206,24 @@ export default function RegisterPage() {
     return Object.keys(e).length === 0;
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === "account") { if (validateAccount()) goStep("profile"); }
     else if (step === "profile") { if (validateProfile()) goStep("security"); }
     else if (step === "security") {
       if (validateSecurity()) {
         setLoading(true);
-        setTimeout(() => { setLoading(false); goStep("done"); }, 1400);
+        const result = await registerUser({
+          userId: form.userId,
+          email: form.email,
+          password: form.password,
+          fullName: form.fullName,
+        });
+        setLoading(false);
+        if (result.success) {
+          goStep("done");
+        } else {
+          setErrors({ general: result.error || "Registration failed" });
+        }
       }
     }
   };
@@ -656,7 +676,7 @@ export default function RegisterPage() {
                   <button
                     id="google-register-btn"
                     type="button"
-                    onClick={() => { window.location.href = "http://localhost:3001/api/auth/google"; }}
+                    onClick={() => { window.location.href = `http://${window.location.hostname}:3001/api/auth/google`; }}
                     style={{
                       width: "100%",
                       padding: "12px 16px",
