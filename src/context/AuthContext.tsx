@@ -34,6 +34,7 @@ export function useAuth() {
 }
 
 function getApiBaseUrl() {
+  if (process.env.NEXT_PUBLIC_BACKEND_URL) return process.env.NEXT_PUBLIC_BACKEND_URL;
   if (typeof window === "undefined") return "http://localhost:3001";
   return `http://${window.location.hostname}:3001`;
 }

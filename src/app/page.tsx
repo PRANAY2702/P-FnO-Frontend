@@ -100,9 +100,9 @@ export default function Home() {
   // ── WebSocket ──
   useEffect(() => {
     // Connect directly to backend — Next.js rewrites can't proxy WebSocket upgrades
-    const backendUrl = typeof window !== "undefined"
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined"
       ? `http://${window.location.hostname}:3001`
-      : "http://localhost:3001";
+      : "http://localhost:3001");
     const socket = io(backendUrl);
     socket.on("connect", () => setIsConnected(true));
     socket.on("disconnect", () => setIsConnected(false));
