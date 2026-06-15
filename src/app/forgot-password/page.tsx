@@ -17,8 +17,8 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const handleRequestOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRequestOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!email) return setError("Please enter your email");
     
     setLoading(true);
@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
-      setSuccess("OTP sent to your email!");
+      setSuccess("OTP sent to your email! (Check backend console)");
       setStep("verify");
     } catch (err: any) {
       setError(err.message || "Failed to request OTP");
@@ -136,6 +136,16 @@ export default function ForgotPasswordPage() {
             <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>
               {loading ? "Resetting..." : "Reset Password"}
             </button>
+            <div style={{ marginTop: 15, textAlign: "center" }}>
+              <button 
+                type="button" 
+                onClick={() => handleRequestOtp()} 
+                disabled={loading}
+                style={{ background: "none", border: "none", color: "#c8a96e", cursor: "pointer", fontSize: 14, textDecoration: "underline" }}
+              >
+                {loading ? "Sending..." : "Resend OTP"}
+              </button>
+            </div>
           </form>
         )}
 
