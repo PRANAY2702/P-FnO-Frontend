@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from "react";
 
 interface LiveChartProps {
-  data: { time: string; price: number }[];
+  data: { time: string; timestamp?: number; price: number }[];
   previousClose?: number;
 }
 
@@ -44,15 +44,20 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
       }
 
       const prices = data.map((d) => d.price);
+      const timestamps = data.map((d, i) => d.timestamp ?? i);
       const minV = previousClose ? Math.min(...prices, previousClose) : Math.min(...prices);
       const maxV = previousClose ? Math.max(...prices, previousClose) : Math.max(...prices);
       const range = maxV - minV || 1;
+
+      const minT = Math.min(...timestamps);
+      const maxT = Math.max(...timestamps);
+      const timeRange = maxT - minT || 1;
 
       const pad = { top: 90, bottom: 32, left: 60, right: 20 };
       const w = W - pad.left - pad.right;
       const h = H - pad.top - pad.bottom;
 
-      const xOf = (i: number) => pad.left + (i / (prices.length - 1)) * w;
+      const xOf = (i: number) => pad.left + ((timestamps[i] - minT) / timeRange) * w;
       const yOf = (v: number) => pad.top + h - ((v - minV) / range) * h;
 
       // Determine dynamic color

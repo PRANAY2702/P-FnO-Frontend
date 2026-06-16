@@ -57,7 +57,7 @@ export default function Home() {
   const { user, isAuthenticated, isLoading, kotakApiSaved, logout } = useAuth();
 
   const [marketData, setMarketData] = useState<any>(null);
-  const [histories, setHistories] = useState<Record<IndexKey, { time: string; price: number }[]>>({
+  const [histories, setHistories] = useState<Record<IndexKey, { time: string; timestamp?: number; price: number }[]>>({
     NIFTY: [],
     BANKNIFTY: [],
     SENSEX: [],
@@ -89,7 +89,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"PRICING" | "RISK">("PRICING");
   const [selectedIndex, setSelectedIndex] = useState<IndexKey | null>(null);
   const [timeframe, setTimeframe] = useState("1D");
-  const [historicalData, setHistoricalData] = useState<{ time: string; price: number }[]>([]);
+  const [historicalData, setHistoricalData] = useState<{ time: string; timestamp?: number; price: number }[]>([]);
   const [isFetchingHistorical, setIsFetchingHistorical] = useState(false);
   const [expiry, setExpiry] = useState(0);
   const [animDir, setAnimDir] = useState(1);
@@ -117,11 +117,12 @@ export default function Home() {
         minute: "2-digit",
         second: "2-digit",
       });
+      const currentTimestamp = Date.now();
       setHistories((prev) => {
         const next = { ...prev };
         INDICES.forEach((idx) => {
           if (data.spots?.[idx]) {
-            const pts = [...next[idx], { time, price: parseFloat(data.spots[idx]) }];
+            const pts = [...next[idx], { time, timestamp: currentTimestamp, price: parseFloat(data.spots[idx]) }];
             next[idx] = pts.length > TF_POINTS[timeframe] ? pts.slice(-TF_POINTS[timeframe]) : pts;
           }
         });
@@ -168,7 +169,7 @@ export default function Home() {
               timeStr = `${mStr} '${yStr}`;
             }
             
-            return { time: timeStr, price: d.price };
+            return { time: timeStr, timestamp: date.getTime(), price: d.price };
           });
           setHistoricalData(formatted);
           
