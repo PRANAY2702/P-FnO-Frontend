@@ -138,9 +138,9 @@ export default function Home() {
     let active = true;
     setIsFetchingHistorical(true);
 
-    const backendUrl = typeof window !== "undefined"
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined"
       ? `http://${window.location.hostname}:3001`
-      : "http://localhost:3001";
+      : "http://localhost:3001");
 
     fetch(`${backendUrl}/api/prices/historical?symbol=${fetchIdx}&range=${timeframe}`)
       .then(r => r.json())
@@ -171,6 +171,19 @@ export default function Home() {
             return { time: timeStr, price: d.price };
           });
           setHistoricalData(formatted);
+          
+          // For 1D, initialize the live history array so it doesn't start empty,
+          // and the websocket will naturally append to it!
+          if (timeframe === "1D") {
+            setHistories(prev => {
+              // Only initialize if we don't already have live data accumulating
+              if (prev[fetchIdx].length < 2) {
+                return { ...prev, [fetchIdx]: formatted };
+              }
+              return prev;
+            });
+          }
+          
           setIsFetchingHistorical(false);
         }
       })
@@ -253,11 +266,7 @@ export default function Home() {
   
   let activeHistory = historicalData;
   if (timeframe === "1D") {
-    if (historicalData.length > 0) {
-      activeHistory = [...historicalData, { time: "Now", price: spot }];
-    } else {
-      activeHistory = histories[displayIdx];
-    }
+    activeHistory = histories[displayIdx];
   }
 
   // Dynamic expiry labels from backend (real dates)
