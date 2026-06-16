@@ -249,6 +249,8 @@ export default function Home() {
   const chainCandidate = marketData.chains?.[displayIdx]?.[expiry];
   const activeChain = Array.isArray(chainCandidate) ? chainCandidate : (marketData.chains?.[displayIdx] || []);
   
+  const spot = parseFloat(marketData.spots[displayIdx]);
+  
   let activeHistory = historicalData;
   if (timeframe === "1D") {
     if (historicalData.length > 0) {
@@ -260,8 +262,6 @@ export default function Home() {
 
   // Dynamic expiry labels from backend (real dates)
   const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["—", "—", "—", "—"];
-
-  const spot = parseFloat(marketData.spots[displayIdx]);
 
   const prevCloseStr = marketData.prevClose?.[displayIdx];
   const prevClose = prevCloseStr ? parseFloat(prevCloseStr) : (spot * 0.993);
