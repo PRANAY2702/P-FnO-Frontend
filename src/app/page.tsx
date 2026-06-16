@@ -39,7 +39,7 @@ const INDEX_META: Record<
 
 const INDICES: IndexKey[] = ["NIFTY", "BANKNIFTY", "SENSEX"];
 const TIMEFRAMES = ["1D", "1W", "1M", "1Y", "5Y", "MAX"];
-const TF_POINTS: Record<string, number> = { "1D": 200, "1W": 300, "1M": 400, "1Y": 252, "5Y": 260, "MAX": 300 };
+const TF_POINTS: Record<string, number> = { "1D": 10000, "1W": 300, "1M": 400, "1Y": 252, "5Y": 260, "MAX": 300 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtPrice(n: number) {
