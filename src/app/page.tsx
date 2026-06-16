@@ -134,7 +134,6 @@ export default function Home() {
 
   // ── Fetch historical data ──
   useEffect(() => {
-    if (timeframe === "1D") return;
     const fetchIdx = selectedIndex ?? "NIFTY";
     let active = true;
     setIsFetchingHistorical(true);
@@ -159,7 +158,9 @@ export default function Home() {
             const min = date.getMinutes().toString().padStart(2, "0");
 
             let timeStr = "";
-            if (timeframe === "1W") {
+            if (timeframe === "1D") {
+              timeStr = `${hr}:${min}`;
+            } else if (timeframe === "1W") {
               timeStr = `${dStr} ${mStr}, ${hr}:${min}`;
             } else if (timeframe === "1M" || timeframe === "1Y") {
               timeStr = `${dStr} ${mStr}`;
@@ -247,7 +248,15 @@ export default function Home() {
   const idxNum = INDICES.indexOf(displayIdx);
   const chainCandidate = marketData.chains?.[displayIdx]?.[expiry];
   const activeChain = Array.isArray(chainCandidate) ? chainCandidate : (marketData.chains?.[displayIdx] || []);
-  const activeHistory = timeframe === "1D" ? histories[displayIdx] : historicalData;
+  
+  let activeHistory = historicalData;
+  if (timeframe === "1D") {
+    if (historicalData.length > 0) {
+      activeHistory = [...historicalData, { time: "Now", price: spot }];
+    } else {
+      activeHistory = histories[displayIdx];
+    }
+  }
 
   // Dynamic expiry labels from backend (real dates)
   const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["—", "—", "—", "—"];
