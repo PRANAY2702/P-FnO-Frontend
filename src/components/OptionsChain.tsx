@@ -1,7 +1,25 @@
 "use client";
 
 import React, { useState } from "react";
+import { Pin, ArrowLeft } from "lucide-react";
 import OrderModal from "./OrderModal";
+import LiveChart from "./LiveChart";
+
+const normCdf = (x: number) => {
+  let t = 1 / (1 + 0.2316419 * Math.abs(x));
+  let d = 0.3989423 * Math.exp(-x * x / 2);
+  let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return x > 0 ? 1 - p : p;
+};
+
+const calculateBlack76 = (F: number, K: number, T: number, r: number, v: number, type: "call" | "put") => {
+  if (T <= 0) return 0;
+  const d1 = (Math.log(F / K) + 0.5 * v * v * T) / (v * Math.sqrt(T));
+  const d2 = d1 - v * Math.sqrt(T);
+  const discount = Math.exp(-r * T);
+  if (type === "call") return discount * (F * normCdf(d1) - K * normCdf(d2));
+  return discount * (K * normCdf(-d2) - F * normCdf(-d1));
+};
 
 interface ChainRow {
   strike: number;
@@ -13,6 +31,9 @@ interface Props {
   chain: ChainRow[];
   spotPrice: number;
   instrument?: string;
+  activeHistory?: { time: string; timestamp?: number; price: number }[];
+  dte?: number;
+  rfRate?: number;
 }
 
 // ── Tooltip ──────────────────────────────────────────────────────────────────
@@ -161,9 +182,10 @@ function TradeButtons({
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instrument = "NIFTY" }: Props) {
+const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instrument = "NIFTY", activeHistory, dte, rfRate }: Props) {
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
   const [tooltipSide, setTooltipSide] = useState<"call" | "put">("call");
+  const [pinnedOption, setPinnedOption] = useState<{strike: number, type: "call" | "put"} | null>(null);
 
   // Order modal state
   const [orderModal, setOrderModal] = useState<{
@@ -200,6 +222,57 @@ const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instru
         }}
       >
         Loading Chain...
+      </div>
+    );
+  }
+
+  // If an option is pinned, show its 1D graph instead of the chain
+  if (pinnedOption && activeHistory && dte !== undefined) {
+    const isCall = pinnedOption.type === "call";
+    const strike = pinnedOption.strike;
+    const r = 0; // Black-76 for Indian options uses r=0
+    const t = Math.max(0.00001, dte / 365.0);
+
+    const historyData = activeHistory.map(d => {
+      const spot = d.price;
+      const F = spot * Math.exp(r * t);
+      const moneyness = Math.abs(spot - strike) / spot;
+      const v = 0.15 + (moneyness * 0.5);
+      const optPrice = calculateBlack76(F, strike, t, r, v, pinnedOption.type);
+      return { ...d, price: optPrice };
+    });
+
+    const currentOptPrice = historyData.length > 0 ? historyData[historyData.length - 1].price : 0;
+    const prevOptPrice = historyData.length > 0 ? historyData[0].price : 0;
+    const diff = currentOptPrice - prevOptPrice;
+    const pct = prevOptPrice > 0 ? (diff / prevOptPrice) * 100 : 0;
+
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--panel-bg)", height: "100%", overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--panel-border)", display: "flex", alignItems: "center", gap: 16 }}>
+          <button 
+            onClick={() => setPinnedOption(null)}
+            style={{ background: "rgba(255,255,255,0.05)", border: "none", color: "var(--text-muted)", cursor: "pointer", borderRadius: 4, padding: 8, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, color: "var(--text-secondary)", letterSpacing: 1 }}>
+              {instrument} {strike} {isCall ? "CE" : "PE"}
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 28, color: isCall ? "var(--call-green)" : "var(--put-red)", fontWeight: 700 }}>
+                ₹{currentOptPrice.toFixed(2)}
+              </div>
+              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: diff >= 0 ? "var(--green)" : "var(--red)" }}>
+                {diff >= 0 ? "▲" : "▼"} ₹{Math.abs(diff).toFixed(2)} ({Math.abs(pct).toFixed(2)}%)
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: 1, position: "relative" }}>
+          <LiveChart data={historyData} previousClose={prevOptPrice} />
+        </div>
       </div>
     );
   }
@@ -309,14 +382,23 @@ const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instru
                   </div>
                 )}
 
-                {/* CALL Trade Buttons */}
-                <div style={{ width: 44, display: "flex", justifyContent: "center" }}>
+                {/* CALL Trade Buttons & Pin */}
+                <div style={{ width: 44, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
                   <TradeButtons
                     side="call"
                     onBuy={() => openOrder("BUY", row.strike, "CALL", row.call.premium)}
                     onSell={() => openOrder("SELL", row.strike, "CALL", row.call.premium)}
                     visible={isHovered}
                   />
+                  {isHovered && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPinnedOption({ strike: row.strike, type: "call" }); }}
+                      style={{ background: "transparent", border: "none", color: "var(--call-green)", cursor: "pointer", padding: 2, opacity: 0.7 }}
+                      title="View 1D Graph"
+                    >
+                      <Pin size={12} />
+                    </button>
+                  )}
                 </div>
 
                 {/* CALL side */}
@@ -435,14 +517,23 @@ const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instru
                   )}
                 </div>
 
-                {/* PUT Trade Buttons */}
-                <div style={{ width: 44, display: "flex", justifyContent: "center" }}>
+                {/* PUT Trade Buttons & Pin */}
+                <div style={{ width: 44, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
                   <TradeButtons
                     side="put"
                     onBuy={() => openOrder("BUY", row.strike, "PUT", row.put.premium)}
                     onSell={() => openOrder("SELL", row.strike, "PUT", row.put.premium)}
                     visible={isHovered}
                   />
+                  {isHovered && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPinnedOption({ strike: row.strike, type: "put" }); }}
+                      style={{ background: "transparent", border: "none", color: "var(--put-red)", cursor: "pointer", padding: 2, opacity: 0.7 }}
+                      title="View 1D Graph"
+                    >
+                      <Pin size={12} />
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -65,6 +65,8 @@ export default function Home() {
   const [portfolioData, setPortfolioData] = useState<any>(null);
   const [sysMetrics, setSysMetrics] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [marketStatus, setMarketStatus] = useState<"OPEN" | "CLOSED">("OPEN");
+  const marketStatusRef = useRef<"OPEN" | "CLOSED">("OPEN");
 
   // Kotak API Modal State
   const [showApiModal, setShowApiModal] = useState(false);
@@ -97,6 +99,32 @@ export default function Home() {
 
   const prevSelectedRef = useRef<IndexKey | null>(null);
 
+  // ── Market Status Checker ──
+  useEffect(() => {
+    const checkMarketStatus = () => {
+      const now = new Date();
+      const options = { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'long' } as any;
+      const formatter = new Intl.DateTimeFormat('en-US', options);
+      const parts = formatter.formatToParts(now);
+      const hour = parseInt(parts.find((p: any) => p.type === 'hour')?.value || "0");
+      const min = parseInt(parts.find((p: any) => p.type === 'minute')?.value || "0");
+      const weekday = parts.find((p: any) => p.type === 'weekday')?.value || "";
+
+      const isWeekend = weekday === 'Saturday' || weekday === 'Sunday';
+      const isBeforeOpen = hour < 9 || (hour === 9 && min < 15);
+      const isAfterClose = hour > 15 || (hour === 15 && min >= 30);
+
+      const status = (isWeekend || isBeforeOpen || isAfterClose) ? "CLOSED" : "OPEN";
+      if (marketStatusRef.current !== status) {
+        setMarketStatus(status);
+        marketStatusRef.current = status;
+      }
+    };
+    checkMarketStatus();
+    const interval = setInterval(checkMarketStatus, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   // ── WebSocket ──
   useEffect(() => {
     // Connect directly to backend — Next.js rewrites can't proxy WebSocket upgrades
@@ -110,6 +138,10 @@ export default function Home() {
     socket.on("market_update", (data: any) => {
       setMarketData(data);
       if (data.sysMetrics) setSysMetrics(data.sysMetrics);
+
+      // Stop appending live points to the chart if market is closed
+      if (marketStatusRef.current === "CLOSED") return;
+
       const time = new Date().toLocaleTimeString("en-IN", {
         timeZone: "Asia/Kolkata",
         hour12: false,
@@ -177,11 +209,14 @@ export default function Home() {
           // and the websocket will naturally append to it!
           if (timeframe === "1D") {
             setHistories(prev => {
-              // Only initialize if we don't already have live data accumulating
-              if (prev[fetchIdx].length < 2) {
-                return { ...prev, [fetchIdx]: formatted };
-              }
-              return prev;
+              const existingLive = prev[fetchIdx];
+              if (existingLive.length === 0) return { ...prev, [fetchIdx]: formatted };
+
+              // Merge: keep all historical data that came before our first recorded live tick
+              const firstLiveTs = existingLive[0].timestamp || Date.now();
+              const historicalBeforeLive = formatted.filter((d: any) => (d.timestamp || 0) < firstLiveTs);
+              
+              return { ...prev, [fetchIdx]: [...historicalBeforeLive, ...existingLive] };
             });
           }
           
@@ -507,13 +542,14 @@ export default function Home() {
             style={{
               fontFamily: "'Share Tech Mono', monospace",
               fontSize: 9,
-              color: "var(--text-muted)",
+              color: marketStatus === "OPEN" ? "var(--green)" : "var(--red)",
               letterSpacing: 2,
               textTransform: "uppercase",
               marginLeft: 4,
+              fontWeight: 700
             }}
           >
-            NSE · MARKET OPEN
+            NSE · MARKET {marketStatus}
           </div>
           
           <button
@@ -690,7 +726,7 @@ export default function Home() {
                   marginBottom: 6,
                 }}
               >
-                {meta.label}
+                {meta.label} {marketStatus === "CLOSED" && <span style={{ color: "var(--red)", marginLeft: 6, fontWeight: "bold" }}>[CLOSED]</span>}
               </div>
               <div
                 style={{
@@ -893,7 +929,14 @@ export default function Home() {
               </div>
 
               {/* Chain */}
-              <OptionsChain chain={activeChain} spotPrice={spot} instrument={displayIdx} />
+              <OptionsChain
+                chain={activeChain}
+                spotPrice={spot}
+                instrument={displayIdx}
+                activeHistory={activeHistory}
+                dte={parseFloat(activeDTE || "0")}
+                rfRate={parseFloat(marketData?.rfRate || "0")}
+              />
             </div>
           </div>
         </div>
