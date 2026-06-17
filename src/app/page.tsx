@@ -278,9 +278,16 @@ export default function Home() {
 
   // Trend direction
   let trendColor = "var(--text-primary)";
+  let openPrice = spot;
+  let highPrice = spot;
+  let lowPrice = spot;
+  
   if (activeHistory.length > 0) {
     const last = activeHistory[activeHistory.length - 1].price;
     trendColor = last >= prevClose ? "var(--green)" : "var(--red)";
+    openPrice = activeHistory[0].price;
+    highPrice = Math.max(...activeHistory.map(d => d.price));
+    lowPrice = Math.min(...activeHistory.map(d => d.price));
   }
 
   const activeDTE = Array.isArray(marketData.timeToMaturity?.[0]) 
@@ -718,6 +725,21 @@ export default function Home() {
                 )}
                 {"  "}
                 {timeframe}
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: 12,
+                  marginTop: 8,
+                  color: "var(--text-muted)",
+                  display: "flex",
+                  gap: 12
+                }}
+              >
+                <span>O: {openPrice.toFixed(2)}</span>
+                <span>H: {highPrice.toFixed(2)}</span>
+                <span>L: {lowPrice.toFixed(2)}</span>
+                <span>C: {spot.toFixed(2)}</span>
               </div>
             </div>
 

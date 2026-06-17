@@ -45,15 +45,32 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
 
       const prices = data.map((d) => d.price);
       const timestamps = data.map((d, i) => d.timestamp ?? i);
-      const minV = previousClose ? Math.min(...prices, previousClose) : Math.min(...prices);
-      const maxV = previousClose ? Math.max(...prices, previousClose) : Math.max(...prices);
-      const range = maxV - minV || 1;
+      let minV = Math.min(...prices);
+      let maxV = Math.max(...prices);
+      if (maxV === minV) {
+        minV -= 10;
+        maxV += 10;
+      } else {
+        const p = (maxV - minV) * 0.1;
+        minV -= p;
+        maxV += p;
+      }
+      const range = maxV - minV;
 
-      const minT = Math.min(...timestamps);
-      const maxT = Math.max(...timestamps);
+      let minT = Math.min(...timestamps);
+      let maxT = Math.max(...timestamps);
+      
+      const span = maxT - minT;
+      if (span > 0 && span <= 24 * 60 * 60 * 1000) {
+        const d = new Date(timestamps[timestamps.length - 1]);
+        const openT = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 15, 0).getTime();
+        const closeT = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 15, 30, 0).getTime();
+        minT = Math.min(minT, openT);
+        maxT = Math.max(maxT, closeT);
+      }
       const timeRange = maxT - minT || 1;
 
-      const pad = { top: 90, bottom: 32, left: 60, right: 20 };
+      const pad = { top: 90, bottom: 10, left: 0, right: 0 };
       const w = W - pad.left - pad.right;
       const h = H - pad.top - pad.bottom;
 
@@ -73,106 +90,44 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
             .trim() || "#00e676"
         : baseColorStr;
 
-      // ── Grid lines ──
-      ctx.strokeStyle = "#1e1e22";
-      ctx.lineWidth = 1;
-      for (let g = 0; g <= 5; g++) {
-        const y = pad.top + (g / 5) * h;
-        ctx.beginPath();
-        ctx.moveTo(pad.left, y);
-        ctx.lineTo(W - pad.right, y);
-        ctx.stroke();
-
-        const val = maxV - (g / 5) * range;
-        ctx.fillStyle = "#555";
-        ctx.font = "9px 'Share Tech Mono', monospace";
-        ctx.textAlign = "right";
-        ctx.fillText(val.toFixed(0), pad.left - 6, y + 3);
-      }
-
       // ── Previous Close Line ──
       if (previousClose) {
         const py = yOf(previousClose);
         ctx.save();
         ctx.beginPath();
-        ctx.setLineDash([4, 4]); // Dotted line
+        ctx.setLineDash([3, 3]); // Dotted line
         ctx.moveTo(pad.left, py);
         ctx.lineTo(W - pad.right, py);
-        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.strokeStyle = "rgba(0,0,0,0.15)";
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.restore();
-        
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.font = "9px 'Share Tech Mono', monospace";
-        ctx.textAlign = "right";
-        ctx.fillText(previousClose.toFixed(0), pad.left - 6, py - 4);
       }
-
-      // ── Gradient fill ──
-      const gradient = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
-      gradient.addColorStop(0, resolvedColor + "35");
-      gradient.addColorStop(0.65, resolvedColor + "10");
-      gradient.addColorStop(1, resolvedColor + "00");
-
-      ctx.beginPath();
-      ctx.moveTo(xOf(0), yOf(prices[0]));
-      for (let i = 1; i < prices.length; i++) {
-        const x0 = xOf(i - 1), y0 = yOf(prices[i - 1]);
-        const x1 = xOf(i), y1 = yOf(prices[i]);
-        const cpx = (x0 + x1) / 2;
-        ctx.bezierCurveTo(cpx, y0, cpx, y1, x1, y1);
-      }
-      ctx.lineTo(xOf(prices.length - 1), H - pad.bottom);
-      ctx.lineTo(xOf(0), H - pad.bottom);
-      ctx.closePath();
-      ctx.fillStyle = gradient;
-      ctx.fill();
 
       // ── Line ──
       ctx.beginPath();
       ctx.moveTo(xOf(0), yOf(prices[0]));
       for (let i = 1; i < prices.length; i++) {
-        const x0 = xOf(i - 1), y0 = yOf(prices[i - 1]);
-        const x1 = xOf(i), y1 = yOf(prices[i]);
-        const cpx = (x0 + x1) / 2;
-        ctx.bezierCurveTo(cpx, y0, cpx, y1, x1, y1);
+        ctx.lineTo(xOf(i), yOf(prices[i]));
       }
       ctx.strokeStyle = resolvedColor;
       ctx.lineWidth = 2;
-      ctx.shadowBlur = 12;
-      ctx.shadowColor = resolvedColor;
       ctx.stroke();
-      ctx.shadowBlur = 0;
 
-      // ── Glowing end dot ──
+      // ── End dot ──
       const lastX = xOf(prices.length - 1);
       const lastY = yOf(prices[prices.length - 1]);
 
-      const glowGrad = ctx.createRadialGradient(lastX, lastY, 0, lastX, lastY, 12);
-      glowGrad.addColorStop(0, resolvedColor + "60");
-      glowGrad.addColorStop(1, resolvedColor + "00");
       ctx.beginPath();
-      ctx.arc(lastX, lastY, 12, 0, Math.PI * 2);
-      ctx.fillStyle = glowGrad;
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
       ctx.fillStyle = resolvedColor;
-      ctx.shadowBlur = 16;
-      ctx.shadowColor = resolvedColor;
       ctx.fill();
-      ctx.shadowBlur = 0;
 
-      // ── X-axis time labels ──
-      ctx.fillStyle = "#888"; // Changed from #444 for better visibility
-      ctx.font = "9px 'Share Tech Mono', monospace";
-      ctx.textAlign = "center";
-      const labelStep = Math.max(1, Math.floor(prices.length / 6));
-      for (let i = 0; i < prices.length; i += labelStep) {
-        ctx.fillText(data[i].time, xOf(i), H - pad.bottom + 14);
-      }
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
     }
 
     resize();
