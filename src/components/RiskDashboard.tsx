@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -12,6 +12,7 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts";
+import { useAuth } from "../context/AuthContext";
 
 interface PortfolioPosition {
   id: string;
@@ -28,7 +29,7 @@ const MOCK_PORTFOLIO: PortfolioPosition[] = [
   { id: "4", type: "call", strike: 22150, quantity: 50,  entryPrice: 22.0 },
 ];
 
-const MULTIPLIER = 100;
+const MULTIPLIER = 1;
 const C_CALL = "#00e676";
 const C_PUT  = "#ff1744";
 const C_POS  = "#00e676";
@@ -190,6 +191,52 @@ const RiskDashboard = React.memo(function RiskDashboard({
   spotPrice: number;
   portfolioData?: any;
 }) {
+  const { token, getApiBaseUrl } = useAuth();
+  const [livePositions, setLivePositions] = useState<any[]>([]);
+  const [liveOrders, setLiveOrders] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    const fetchData = async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const [posRes, ordRes] = await Promise.all([
+          fetch(`${baseUrl}/api/positions`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${baseUrl}/api/orders`, { headers: { Authorization: `Bearer ${token}` } })
+        ]);
+        const posData = await posRes.json();
+        const ordData = await ordRes.json();
+        if (active) {
+          if (posData.positions) setLivePositions(posData.positions);
+          if (ordData.orders) setLiveOrders(ordData.orders);
+        }
+      } catch (err) {
+        console.error("Failed to fetch positions/orders:", err);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 5000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [token, getApiBaseUrl]);
+
+  const handleCancelOrder = async (orderNo: string, orderType: string = "REGULAR") => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/orders/cancel`, {
+         method: "POST",
+         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+         body: JSON.stringify({ orderNo, orderType })
+      });
+    } catch(err) {
+      console.error("Failed to cancel order:", err);
+    }
+  };
+
   const [maxLossLimit, setMaxLossLimit] = React.useState(10000);
   const [slPoints, setSlPoints] = React.useState(20);
 
@@ -199,7 +246,30 @@ const RiskDashboard = React.memo(function RiskDashboard({
   const enriched = useMemo(() => {
     let netDelta = 0, netGamma = 0, netTheta = 0, netVega = 0, netPremium = 0, totalPnL = 0;
 
-    const positions = MOCK_PORTFOLIO.map((pos) => {
+    const sourcePositions = livePositions.length > 0 ? livePositions.map((pos) => {
+      const type = (pos.optTp || (pos.trdSym?.endsWith('PE') ? 'pe' : 'ce')).toLowerCase() === 'pe' ? 'put' : 'call';
+      const strike = parseFloat(pos.stkPrc || "0") || (parseInt(pos.trdSym?.match(/\d{4,}/)?.[0] || "0"));
+      const quantity = parseInt(pos.qty || "0");
+      
+      const flBuyQty = parseInt(pos.flBuyQty || "0");
+      const flSellQty = parseInt(pos.flSellQty || "0");
+      const buyAmt = parseFloat(pos.buyAmt || "0");
+      const sellAmt = parseFloat(pos.sellAmt || "0");
+
+      let entryPrice = 0;
+      if (quantity > 0 && flBuyQty > 0) entryPrice = buyAmt / flBuyQty;
+      else if (quantity < 0 && flSellQty > 0) entryPrice = sellAmt / flSellQty;
+
+      return {
+        id: pos.trdSym || Math.random().toString(),
+        type: type as "call" | "put",
+        strike,
+        quantity,
+        entryPrice
+      };
+    }) : MOCK_PORTFOLIO;
+
+    const positions = sourcePositions.map((pos) => {
       const chainRow = chain.find((r) => r.strike === pos.strike);
       const live = chainRow ? chainRow[pos.type] : { premium: 0, delta: 0, gamma: 0, theta: 0, vega: 0 };
 
@@ -229,7 +299,7 @@ const RiskDashboard = React.memo(function RiskDashboard({
     });
 
     return { positions, netDelta, netGamma, netTheta, netVega, netPremium, totalPnL };
-  }, [chain]);
+  }, [chain, livePositions]);
 
   const deltaData = enriched.positions.map((p) => ({
     name: `${p.strike} ${p.type.toUpperCase()}`,
@@ -334,43 +404,87 @@ const RiskDashboard = React.memo(function RiskDashboard({
 
       {/* ── Bottom Row: Positions & Greeks ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16, flex: 1, minHeight: 300 }}>
-        {/* Portfolio Book */}
-        <Panel title="Order Book / Positions">
-          <div style={{ flex: 1, overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead style={{ background: "#0a0a0c", position: "sticky", top: 0, zIndex: 5 }}>
-                <tr>
-                  {["Instrument","Qty","Entry","Mark","P&L","Δ Delta","Γ Gamma","Θ Theta"].map((h, i) => (
-                    <th key={h} style={{ padding: "10px 14px", fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: 1.5, color: "var(--text-muted)", textTransform: "uppercase", textAlign: i === 0 ? "left" : "right", fontWeight: 400, borderBottom: "1px solid var(--panel-border)", whiteSpace: "nowrap" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {enriched.positions.map((pos) => (
-                  <tr key={pos.id} style={{ borderBottom: "1px solid #1a1a1e", transition: "background 0.15s" }} onMouseEnter={(e) => ((e.currentTarget as HTMLTableRowElement).style.background = "var(--hover-bg)")} onMouseLeave={(e) => ((e.currentTarget as HTMLTableRowElement).style.background = "transparent")}>
-                    <td style={{ padding: "10px 14px" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", borderRadius: 3, fontFamily: "'Share Tech Mono', monospace", fontSize: 9, fontWeight: 700, marginRight: 8, background: pos.type === "call" ? "rgba(0,230,118,0.1)" : "rgba(255,23,68,0.1)", color: pos.type === "call" ? C_CALL : C_PUT }}>
-                        {pos.type.toUpperCase()}
-                      </span>
-                      <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: "var(--text-primary)" }}>{pos.strike}</span>
-                    </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: pos.quantity >= 0 ? "var(--text-primary)" : C_PUT }}>
-                      {pos.quantity > 0 ? "+" : ""}{pos.quantity}
-                    </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: "var(--text-muted)" }}>{pos.entryPrice.toFixed(2)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: "var(--text-primary)" }}>{pos.currentPrice.toFixed(2)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, fontWeight: 700, color: pos.pnl >= 0 ? C_CALL : C_PUT }}>{pos.pnl > 0 ? "+" : ""}{pos.pnl.toFixed(2)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "#a0c8ff" }}>{pos.greeks.delta.toFixed(2)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "#c8a0ff" }}>{pos.greeks.gamma.toFixed(2)}</td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "#ffc060" }}>{pos.greeks.theta.toFixed(2)}</td>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
+          {/* Portfolio Book */}
+          <Panel title="Positions" style={{ flex: 1 }}>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ background: "#0a0a0c", position: "sticky", top: 0, zIndex: 5 }}>
+                  <tr>
+                    {["Instrument","Qty","Entry","Mark","P&L","Δ Delta","Γ Gamma","Θ Theta"].map((h, i) => (
+                      <th key={h} style={{ padding: "10px 14px", fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: 1.5, color: "var(--text-muted)", textTransform: "uppercase", textAlign: i === 0 ? "left" : "right", fontWeight: 400, borderBottom: "1px solid var(--panel-border)", whiteSpace: "nowrap" }}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
+                </thead>
+                <tbody>
+                  {enriched.positions.map((pos) => (
+                    <tr key={pos.id} style={{ borderBottom: "1px solid #1a1a1e", transition: "background 0.15s" }} onMouseEnter={(e) => ((e.currentTarget as HTMLTableRowElement).style.background = "var(--hover-bg)")} onMouseLeave={(e) => ((e.currentTarget as HTMLTableRowElement).style.background = "transparent")}>
+                      <td style={{ padding: "10px 14px" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", borderRadius: 3, fontFamily: "'Share Tech Mono', monospace", fontSize: 9, fontWeight: 700, marginRight: 8, background: pos.type === "call" ? "rgba(0,230,118,0.1)" : "rgba(255,23,68,0.1)", color: pos.type === "call" ? C_CALL : C_PUT }}>
+                          {pos.type.toUpperCase()}
+                        </span>
+                        <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: "var(--text-primary)" }}>{pos.strike}</span>
+                      </td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: pos.quantity >= 0 ? "var(--text-primary)" : C_PUT }}>
+                        {pos.quantity > 0 ? "+" : ""}{pos.quantity}
+                      </td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: "var(--text-muted)" }}>{pos.entryPrice.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: "var(--text-primary)" }}>{pos.currentPrice.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 12, fontWeight: 700, color: pos.pnl >= 0 ? C_CALL : C_PUT }}>{pos.pnl > 0 ? "+" : ""}{pos.pnl.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "#a0c8ff" }}>{pos.greeks.delta.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "#c8a0ff" }}>{pos.greeks.gamma.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "#ffc060" }}>{pos.greeks.theta.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          {/* Active Orders */}
+          <Panel title="Active Orders" style={{ flex: 1, maxHeight: 200 }}>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ background: "#0a0a0c", position: "sticky", top: 0, zIndex: 5 }}>
+                  <tr>
+                    {["Order No","Type","Symbol","Qty","Price","Status","Action"].map((h, i) => (
+                      <th key={h} style={{ padding: "10px 14px", fontFamily: "'Share Tech Mono', monospace", fontSize: 9, letterSpacing: 1.5, color: "var(--text-muted)", textTransform: "uppercase", textAlign: i === 0 ? "left" : "right", fontWeight: 400, borderBottom: "1px solid var(--panel-border)", whiteSpace: "nowrap" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveOrders.map((ord: any) => (
+                    <tr key={ord.nOrdNo} style={{ borderBottom: "1px solid #1a1a1e", transition: "background 0.15s" }} onMouseEnter={(e) => ((e.currentTarget as HTMLTableRowElement).style.background = "var(--hover-bg)")} onMouseLeave={(e) => ((e.currentTarget as HTMLTableRowElement).style.background = "transparent")}>
+                      <td style={{ padding: "10px 14px", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "var(--text-primary)" }}>{ord.nOrdNo || ord.id || ord.orderNo}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: ord.trnTp === "B" || ord.tt === "B" || ord.type === "BUY" ? C_CALL : C_PUT }}>{ord.trnTp === "B" || ord.tt === "B" || ord.type === "BUY" ? "BUY" : "SELL"}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "var(--text-primary)" }}>{ord.trdSym || ord.ts || ord.symbol}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "var(--text-primary)" }}>{ord.qty || ord.quantity}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: "var(--text-primary)" }}>{ord.prc || ord.price}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: (ord.ordSt || ord.status || "").toLowerCase() === "open" ? "#ffc060" : "var(--text-muted)" }}>{ord.ordSt || ord.status || "OPEN"}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                        {((ord.ordSt || ord.status || "open").toLowerCase() === "open" || (ord.ordSt || ord.status || "").toLowerCase() === "pending") && (
+                          <button 
+                            onClick={() => handleCancelOrder(ord.nOrdNo || ord.id || ord.orderNo)}
+                            style={{ background: "rgba(255,23,68,0.1)", color: C_PUT, border: `1px solid ${C_PUT}`, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace", cursor: "pointer", textTransform: "uppercase" }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {liveOrders.length === 0 && (
+                    <tr><td colSpan={7} style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 11, fontFamily: "'Share Tech Mono', monospace" }}>No active orders</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
 
         {/* Delta exposure chart */}
         <Panel title="Δ Delta Exposure">

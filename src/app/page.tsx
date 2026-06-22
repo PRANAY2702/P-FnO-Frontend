@@ -127,7 +127,7 @@ export default function Home() {
 
   // ── WebSocket ──
   useEffect(() => {
-    // Connect directly to backend — Next.js rewrites can't proxy WebSocket upgrades
+    // Connect directly to backend â€” Next.js rewrites can't proxy WebSocket upgrades
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined"
       ? `http://${window.location.hostname}:3001`
       : "http://localhost:3001");
@@ -306,7 +306,7 @@ export default function Home() {
   }
 
   // Dynamic expiry labels from backend (real dates)
-  const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["—", "—", "—", "—"];
+  const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["â€”", "â€”", "â€”", "â€”"];
 
   const prevCloseStr = marketData.prevClose?.[displayIdx];
   const prevClose = prevCloseStr ? parseFloat(prevCloseStr) : (spot * 0.993);
@@ -357,7 +357,7 @@ export default function Home() {
         fontFamily: "'Rajdhani', sans-serif",
       }}
     >
-      {/* ══ NAVBAR ══════════════════════════════════════════════════════════════ */}
+      {/* â•â• NAVBAR â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <nav
         style={{
           position: "sticky",
@@ -600,7 +600,7 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* ══ INDEX BAR ════════════════════════════════════════════════════════════ */}
+      {/* â•â• INDEX BAR â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <div
         style={{
           display: "flex",
@@ -693,7 +693,7 @@ export default function Home() {
         })}
       </div>
 
-      {/* ══ MAIN ═════════════════════════════════════════════════════════════════ */}
+      {/* â•â• MAIN â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {activeTab === "PRICING" ? (
         <div
           style={{
@@ -819,9 +819,10 @@ export default function Home() {
                 FETCHING DATA...
               </div>
             ) : (
-              <LiveChart data={activeHistory} previousClose={prevClose} />
+              <LiveChart data={activeHistory} previousClose={prevClose} timeframe={timeframe} />
             )}
           </div>
+
 
           {/* Options Panel */}
           <div

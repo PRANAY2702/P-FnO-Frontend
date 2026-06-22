@@ -7,9 +7,10 @@ import { Maximize, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 interface LiveChartProps {
   data: { time: string; timestamp?: number; price: number }[];
   previousClose?: number;
+  timeframe?: string;
 }
 
-const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveChartProps) {
+const LiveChart = React.memo(function LiveChart({ data, previousClose, timeframe }: LiveChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const seriesRef = useRef<any>(null);
@@ -73,6 +74,8 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
         secondsVisible: false,
         fixLeftEdge: true,
         fixRightEdge: true,
+        shiftVisibleRangeOnNewBar: false,
+        rightOffset: 0,
         tickMarkFormatter: (time: number) => {
           const date = new Date(time * 1000);
           return date.toLocaleTimeString("en-IN", { hour12: false, hour: "2-digit", minute: "2-digit" });
@@ -202,15 +205,19 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
       return { time: timeVal as any, value: d.price };
     });
 
-    // Remove duplicates
-    const uniqueData = [];
-    let lastTime = 0;
+    // For a linear intraday chart in lightweight-charts (which is ordinal),
+    // we MUST map all data to a uniform grid. We'll use 1-minute (60s) buckets.
+    const minuteMap = new Map<number, number>();
     for (const d of formattedData) {
-      if (d.time > lastTime) {
-        uniqueData.push(d);
-        lastTime = d.time;
-      }
+      // Floor to nearest minute
+      const minuteTime = Math.floor(d.time / 60) * 60;
+      // Overwrite with the latest price for that minute
+      minuteMap.set(minuteTime, d.value);
     }
+
+    const uniqueData = Array.from(minuteMap.entries())
+      .map(([time, value]) => ({ time: time as any, value }))
+      .sort((a, b) => a.time - b.time);
 
     const lastPrice = uniqueData.length > 0 ? uniqueData[uniqueData.length - 1].value : 0;
     
@@ -232,7 +239,42 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
       crosshairMarkerBackgroundColor: lineColor,
     });
 
-    seriesRef.current.setData(uniqueData);
+    let finalData = uniqueData;
+    // For 1D: The x-axis must be fixed from 9:15 to 15:30 IST.
+    // lightweight-charts needs "whitespace data points" for the future to render the timeline.
+    if (timeframe === "1D" && uniqueData.length > 0) {
+      const firstDataDate = new Date(uniqueData[0].time * 1000);
+      const dataIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(firstDataDate);
+      const [y, m, d] = dataIST.split('-').map(Number);
+
+      const marketOpenUTC = Date.UTC(y, m - 1, d, 3, 45, 0) / 1000; // 9:15 IST
+      const marketCloseUTC = Date.UTC(y, m - 1, d, 10, 0, 0) / 1000; // 15:30 IST
+
+      const marketData = uniqueData.filter(
+        (pt: any) => pt.time >= marketOpenUTC && pt.time <= marketCloseUTC
+      );
+
+      if (marketData.length > 0) {
+        const paddedData = [];
+        const firstTime = marketData[0].time;
+        const lastTime = marketData[marketData.length - 1].time;
+
+        // 1. Actual data (no whitespace padding before the first point)
+        paddedData.push(...marketData);
+
+        // Calculate exact 1-minute steps for future padding
+        const step = 60;
+
+        // 2. Whitespace after last data point to extend the timeline to 3:30 PM
+        for (let t = lastTime + step; t <= marketCloseUTC; t += step) {
+          paddedData.push({ time: t as any } as any);
+        }
+        
+        finalData = paddedData;
+      }
+    }
+
+    seriesRef.current.setData(finalData);
 
     // Add baseline
     if (previousClose && !baselineRef.current) {
@@ -269,10 +311,41 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose }: LiveCha
       });
     }
 
-    // Only fit content on initial load or if the start timeframe changes, so we don't break user zoom/pan
-    if (uniqueData.length > 0 && uniqueData[0].time !== lastInitialTimeRef.current) {
-      chartRef.current.timeScale().fitContent();
+    // Apply strict lockdown for 1D timeframe, otherwise allow standard interaction
+    if (timeframe === "1D" && uniqueData.length > 0) {
+      chartRef.current.applyOptions({
+        handleScroll: false,
+        handleScale: false,
+      });
+      chartRef.current.timeScale().applyOptions({
+        shiftVisibleRangeOnNewBar: false,
+        rightOffset: 0,
+        fixLeftEdge: false,
+        fixRightEdge: false,
+      });
+
+      // Lock the x-axis: Start exactly from the first available data point, end at 3:30 PM IST
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: 0,
+        to: finalData.length - 1,
+      });
+
       lastInitialTimeRef.current = uniqueData[0].time;
+    } else {
+      chartRef.current.applyOptions({
+        handleScroll: { mouseWheel: true, pressedMouseMove: true },
+        handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+      });
+      chartRef.current.timeScale().applyOptions({
+        shiftVisibleRangeOnNewBar: true,
+        fixLeftEdge: true,
+        fixRightEdge: true,
+      });
+      // Only fit content on initial load or if the start timeframe changes
+      if (uniqueData.length > 0 && uniqueData[0].time !== lastInitialTimeRef.current) {
+        chartRef.current.timeScale().fitContent();
+        lastInitialTimeRef.current = uniqueData[0].time;
+      }
     }
   }, [data, previousClose]);
 
