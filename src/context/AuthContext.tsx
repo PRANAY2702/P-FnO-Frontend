@@ -19,7 +19,7 @@ interface AuthContextType {
   kotakApiSaved: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
-  register: (data: { userId: string; email: string; password: string; fullName: string }) => Promise<{ success: boolean; error?: string }>;
+  register: (data: { userId: string; email: string; password: string; fullName: string; broker: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   saveKotakApi: (keys: { consumerKey: string; consumerSecret: string; mpin: string }) => Promise<{ success: boolean; error?: string }>;
   getApiBaseUrl: () => string;
@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (data: { userId: string; email: string; password: string; fullName: string }) => {
+  const register = useCallback(async (data: { userId: string; email: string; password: string; fullName: string; broker: string }) => {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
         method: "POST",

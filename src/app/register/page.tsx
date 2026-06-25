@@ -117,8 +117,7 @@ const STEPS: Step[] = ["account", "profile", "security", "done"];
 const STEP_LABELS = ["Account", "Profile", "Security", "Complete"];
 
 const BROKERS = [
-  "Kotak Neo", "Zerodha", "ICICI Direct", "HDFC Securities",
-  "Angel Broking", "Upstox", "5Paisa", "Groww", "Other",
+  "Kotak Neo", "Upstox",
 ];
 
 // ─── Password strength ────────────────────────────────────────────────────────
@@ -217,6 +216,7 @@ export default function RegisterPage() {
           email: form.email,
           password: form.password,
           fullName: form.fullName,
+          broker: form.broker,
         });
         setLoading(false);
         if (result.success) {

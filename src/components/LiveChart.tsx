@@ -280,9 +280,9 @@ const LiveChart = React.memo(function LiveChart({ data, previousClose, timeframe
     if (previousClose && !baselineRef.current) {
       baselineRef.current = seriesRef.current.createPriceLine({
         price: previousClose,
-        color: "rgba(255, 255, 255, 0.3)",
-        lineWidth: 1,
-        lineStyle: 2, // dashed
+        color: "rgba(255, 255, 255, 0.5)",
+        lineWidth: 2,
+        lineStyle: 1, // Dotted
         axisLabelVisible: true,
         title: "PREV CLOSE",
       });

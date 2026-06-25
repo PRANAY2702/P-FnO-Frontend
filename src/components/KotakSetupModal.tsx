@@ -11,7 +11,7 @@ interface KotakSetupModalProps {
 }
 
 export default function KotakSetupModal({ visible, onClose, onSuccess, isFirstTime }: KotakSetupModalProps) {
-  const { saveKotakApi, kotakApiSaved } = useAuth();
+  const { saveKotakApi, kotakApiSaved, logout } = useAuth();
   const [consumerKey, setConsumerKey] = useState("");
   const [consumerSecret, setConsumerSecret] = useState("");
   const [mpin, setMpin] = useState("");
@@ -123,7 +123,7 @@ export default function KotakSetupModal({ visible, onClose, onSuccess, isFirstTi
                 textTransform: "uppercase",
               }}
             >
-              {isFirstTime ? "Welcome! Set Up Trading" : "Kotak Neo Integration"}
+              {isFirstTime ? "Connect API to Trade" : "Kotak Neo Integration"}
             </div>
             <div
               style={{
@@ -174,7 +174,7 @@ export default function KotakSetupModal({ visible, onClose, onSuccess, isFirstTi
                   marginBottom: 6,
                 }}
               >
-                🔑 First-time Setup Required
+                🔑 API Registration Required
               </div>
               <div
                 style={{
@@ -346,6 +346,37 @@ export default function KotakSetupModal({ visible, onClose, onSuccess, isFirstTi
               You can update these later from the API KEYS button in the navbar
             </div>
           )}
+
+          {/* Logout button */}
+          <button
+            onClick={() => { onClose(); logout(); }}
+            style={{
+              width: "100%",
+              padding: "10px",
+              background: "transparent",
+              border: "1px solid #2a2a2e",
+              borderRadius: 6,
+              color: "#666",
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 10,
+              letterSpacing: 2,
+              cursor: "pointer",
+              textTransform: "uppercase",
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#ff1744";
+              e.currentTarget.style.color = "#ff1744";
+              e.currentTarget.style.background = "rgba(255,23,68,0.06)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "#2a2a2e";
+              e.currentTarget.style.color = "#666";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            Logout
+          </button>
         </div>
       </div>
     </div>

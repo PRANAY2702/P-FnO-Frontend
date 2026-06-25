@@ -7,6 +7,7 @@ import OptionsChain from "../components/OptionsChain";
 import RiskDashboard from "../components/RiskDashboard";
 import LiveChart from "../components/LiveChart";
 import KotakSetupModal from "../components/KotakSetupModal";
+import WalletModal from "../components/WalletModal";
 import { useAuth } from "../context/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ function fmtChange(diff: number, pct: number) {
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Home() {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading, kotakApiSaved, logout } = useAuth();
+  const { user, token, isAuthenticated, isLoading, kotakApiSaved, logout } = useAuth();
 
   const [marketData, setMarketData] = useState<any>(null);
   const [histories, setHistories] = useState<Record<IndexKey, { time: string; timestamp?: number; price: number }[]>>({
@@ -70,7 +71,28 @@ export default function Home() {
 
   // Kotak API Modal State
   const [showApiModal, setShowApiModal] = useState(false);
-  const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  // Fetch wallet balance periodically
+  useEffect(() => {
+    if (!token) return;
+    const fetchWallet = async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:3001` : "http://localhost:3001");
+        const res = await fetch(`${backendUrl}/api/wallet/balance`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok) setWalletBalance(data.balance);
+      } catch (err) {
+        console.error("Failed to fetch wallet", err);
+      }
+    };
+    fetchWallet();
+    const iv = setInterval(fetchWallet, 5000);
+    return () => clearInterval(iv);
+  }, [token]);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -79,13 +101,7 @@ export default function Home() {
     }
   }, [isLoading, isAuthenticated, router]);
 
-  // Show first-time Kotak setup after login
-  useEffect(() => {
-    if (isAuthenticated && !kotakApiSaved && !showFirstTimeSetup) {
-      const timer = setTimeout(() => setShowFirstTimeSetup(true), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [isAuthenticated, kotakApiSaved, showFirstTimeSetup]);
+
 
   // P-FnO UI state
   const [activeTab, setActiveTab] = useState<"PRICING" | "RISK">("PRICING");
@@ -309,7 +325,7 @@ export default function Home() {
   const expiryLabels: string[] = marketData.expiryLabels?.[displayIdx] || ["â€”", "â€”", "â€”", "â€”"];
 
   const prevCloseStr = marketData.prevClose?.[displayIdx];
-  const prevClose = prevCloseStr ? parseFloat(prevCloseStr) : (spot * 0.993);
+  const prevClose = prevCloseStr ? parseFloat(prevCloseStr) : spot;
 
   // Trend direction
   let trendColor = "var(--text-primary)";
@@ -332,7 +348,7 @@ export default function Home() {
   // Per-tab info
   const tabInfo = INDICES.map((idx) => {
     const s = parseFloat(marketData.spots[idx]);
-    const pc = marketData.prevClose ? parseFloat(marketData.prevClose[idx]) : s * 0.993;
+    const pc = marketData.prevClose?.[idx] ? parseFloat(marketData.prevClose[idx]) : s;
     const diff = s - pc;
     const pct = (diff / pc) * 100;
     return { key: idx, label: INDEX_META[idx].label, spot: s, diff, pct };
@@ -357,7 +373,7 @@ export default function Home() {
         fontFamily: "'Rajdhani', sans-serif",
       }}
     >
-      {/* â•â• NAVBAR â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* â• â•  NAVBAR â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•  */}
       <nav
         style={{
           position: "sticky",
@@ -567,6 +583,32 @@ export default function Home() {
             }}
           >
             {kotakApiSaved ? '✓ API' : 'API KEYS'}
+          </button>
+
+          <button
+            onClick={() => setShowWalletModal(true)}
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: 10,
+              padding: "4px 10px",
+              border: "1px solid rgba(59, 130, 246, 0.3)",
+              background: "rgba(59, 130, 246, 0.05)",
+              color: "#3B82F6",
+              cursor: "pointer",
+              borderRadius: 4,
+              letterSpacing: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              transition: "all 0.2s"
+            }}
+          >
+            <span>WALLET</span>
+            {walletBalance !== null && (
+              <span style={{ color: "#fff", fontWeight: 700, fontSize: 11 }}>
+                ₹{walletBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            )}
           </button>
 
           {/* User info + Logout */}
@@ -954,13 +996,9 @@ export default function Home() {
         onClose={() => setShowApiModal(false)}
       />
 
-      {/* ── First-time Kotak Setup (mandatory after login) ─────────────────── */}
-      <KotakSetupModal
-        visible={showFirstTimeSetup && !kotakApiSaved}
-        onClose={() => setShowFirstTimeSetup(false)}
-        onSuccess={() => setShowFirstTimeSetup(false)}
-        isFirstTime
-      />
+      {showWalletModal && (
+        <WalletModal onClose={() => setShowWalletModal(false)} />
+      )}
     </div>
   );
 }

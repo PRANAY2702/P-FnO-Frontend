@@ -22,12 +22,7 @@ interface PortfolioPosition {
   entryPrice: number;
 }
 
-const MOCK_PORTFOLIO: PortfolioPosition[] = [
-  { id: "1", type: "put",  strike: 21850, quantity: 50,  entryPrice: 20.5 },
-  { id: "2", type: "put",  strike: 21950, quantity: -50, entryPrice: 85.0 },
-  { id: "3", type: "call", strike: 22050, quantity: -50, entryPrice: 90.0 },
-  { id: "4", type: "call", strike: 22150, quantity: 50,  entryPrice: 22.0 },
-];
+
 
 const MULTIPLIER = 1;
 const C_CALL = "#00e676";
@@ -267,7 +262,7 @@ const RiskDashboard = React.memo(function RiskDashboard({
         quantity,
         entryPrice
       };
-    }) : MOCK_PORTFOLIO;
+    }) : [];
 
     const positions = sourcePositions.map((pos) => {
       const chainRow = chain.find((r) => r.strike === pos.strike);
@@ -306,10 +301,10 @@ const RiskDashboard = React.memo(function RiskDashboard({
     delta: Number(p.greeks.delta.toFixed(2)),
   }));
 
-  // Mock static stats
-  const winRate = 65.4;
-  const avgProfit = 3450;
-  const avgLoss = -1200;
+  // Compute stats from actual positions
+  const profitTrades = enriched.positions.filter(p => p.pnl > 0).length;
+  const totalTrades = enriched.positions.length;
+  const winRate = totalTrades > 0 ? (profitTrades / totalTrades) * 100 : 0;
 
   // Real-time Margin Calcs
   const marginUsedPct = margin.total > 0 ? (margin.used / margin.total) * 100 : 0;
@@ -325,7 +320,7 @@ const RiskDashboard = React.memo(function RiskDashboard({
         <MetricCard title="Net Delta"  value={enriched.netDelta} />
         <MetricCard title="Net Theta"  value={enriched.netTheta} invertColors />
         <MetricCard title="Margin Available" value={margin.available} prefix="₹" />
-        <MetricCard title="Running P&L (Sim)"  value={margin.runningPnL} prefix="₹" />
+        <MetricCard title="Running P&L"  value={margin.runningPnL} prefix="₹" />
         <MetricCard title="Max Drawdown" value={-margin.maxDrawdownPct} suffix="%" invertColors />
         <MetricCard title="Win Rate" value={winRate} suffix="%" />
       </div>

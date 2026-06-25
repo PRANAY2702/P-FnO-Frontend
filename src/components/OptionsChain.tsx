@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { Pin, ArrowLeft } from "lucide-react";
 import OrderModal from "./OrderModal";
 import LiveChart from "./LiveChart";
+import KotakSetupModal from "./KotakSetupModal";
+import { useAuth } from "../context/AuthContext";
 
 const normCdf = (x: number) => {
   let t = 1 / (1 + 0.2316419 * Math.abs(x));
@@ -183,9 +185,11 @@ function TradeButtons({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instrument = "NIFTY", activeHistory, dte, rfRate }: Props) {
+  const { kotakApiSaved } = useAuth();
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
   const [tooltipSide, setTooltipSide] = useState<"call" | "put">("call");
   const [pinnedOption, setPinnedOption] = useState<{strike: number, type: "call" | "put"} | null>(null);
+  const [showApiSetup, setShowApiSetup] = useState(false);
 
   // Order modal state
   const [orderModal, setOrderModal] = useState<{
@@ -203,6 +207,10 @@ const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instru
   });
 
   const openOrder = (orderType: "BUY" | "SELL", strike: number, optionType: "CALL" | "PUT", premium: number) => {
+    if (!kotakApiSaved) {
+      setShowApiSetup(true);
+      return;
+    }
     setOrderModal({ visible: true, orderType, strike, optionType, premium });
   };
 
@@ -550,6 +558,14 @@ const OptionsChain = React.memo(function OptionsChain({ chain, spotPrice, instru
         strike={orderModal.strike}
         optionType={orderModal.optionType}
         premium={orderModal.premium}
+      />
+
+      {/* API Setup Modal — shown when user tries to trade without API keys */}
+      <KotakSetupModal
+        visible={showApiSetup}
+        onClose={() => setShowApiSetup(false)}
+        onSuccess={() => setShowApiSetup(false)}
+        isFirstTime
       />
     </>
   );
